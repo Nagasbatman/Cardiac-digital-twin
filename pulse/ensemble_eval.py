@@ -39,14 +39,34 @@ warnings.filterwarnings("ignore")
 def load_folds(folds_dir: Path, img_size: int, device) -> List[torch.nn.Module]:
     models = []
     for fd in sorted(folds_dir.glob("fold_*")):
+        if fd.name == "fold_4":
+            print("  [skip] fold_4 skipped per user request", flush=True)
+            continue
         ck_path = fd / "best_model.pth"
         if not ck_path.exists():
-            print(f"  [skip] {fd} has no best_model.pth"); continue
-        m = PS.PULSESeg(img_size=img_size).to(device)
-        ck = torch.load(ck_path, map_location=device)
-        m.load_state_dict(ck["model"]); m.eval()
-        models.append(m)
-        print(f"  loaded {ck_path} (fold={ck.get('fold')}, best_dice={ck.get('best_dice'):.4f})")
+            print(f"  [skip] {fd} has no best_model.pth", flush=True)
+            continue
+
+        try:
+            print(f"  [load] {fd.name} to GPU ...", flush=True)
+            m = PS.PULSESeg(img_size=img_size)
+            ck = torch.load(ck_path, map_location='cpu')
+            state_dict = ck["model"] if "model" in ck else ck
+            renamed_state_dict = {}
+            for key, value in state_dict.items():
+                key = key.replace(".attention.attention.query.", ".attention.q_proj.")
+                key = key.replace(".attention.attention.key.", ".attention.k_proj.")
+                key = key.replace(".attention.attention.value.", ".attention.v_proj.")
+                key = key.replace(".attention.output.dense.", ".attention.o_proj.")
+                renamed_state_dict[key] = value
+            m.load_state_dict(renamed_state_dict)
+            m.to(device).eval()
+            models.append(m)
+            print(f"  loaded {ck_path} (fold={ck.get('fold')}, best_dice={ck.get('best_dice'):.4f}) [GPU]", flush=True)
+        except Exception as e:
+            print(f"  [ERROR] loading {ck_path}: {e}", flush=True)
+            raise
+
     if not models:
         raise RuntimeError("No fold checkpoints found")
     return models
@@ -54,39 +74,53 @@ def load_folds(folds_dir: Path, img_size: int, device) -> List[torch.nn.Module]:
 
 @torch.no_grad()
 def infer_volume_ensemble(models, img_path, device, img_size, per_fold=False):
-    """2.5D + 4-way TTA, softmax averaged over folds. Returns ensemble label map,
-    and optionally a list of per-fold label maps."""
+    """2.5D + 4-way TTA, softmax averaged over folds.
+    Runs fast batched-slice inference directly on GPU.
+    Returns ensemble label map, and optionally a list of per-fold label maps."""
     vol = nib.load(img_path).get_fdata().astype(np.float32)
     H, W, S = vol.shape
     ens = np.zeros((H, W, S), np.uint8)
     pf = [np.zeros((H, W, S), np.uint8) for _ in models] if per_fold else None
+
+    # Pre-process all slices on CPU
+    slices_x = []
     for z in range(S):
         z0, z1, z2 = max(z-1, 0), z, min(z+1, S-1)
         sl = [np.ascontiguousarray(zscore(vol[..., zi])) for zi in (z0, z1, z2)]
         r = [cv2.resize(s, (img_size, img_size), interpolation=cv2.INTER_LINEAR) for s in sl]
-        x0 = torch.from_numpy(np.stack(r, -1).transpose(2, 0, 1)).float().unsqueeze(0).to(device)
-        fold_probs = []
+        slices_x.append(torch.from_numpy(np.stack(r, -1).transpose(2, 0, 1)).float())
+
+    batch_x = torch.stack(slices_x).to(device)  # [S, 3, img_size, img_size]
+
+    fold_probs_all = []  # list of [S, C, img_size, img_size]
+    with torch.amp.autocast(device.type):
         for m in models:
-            ps = []
+            tta_probs = []
             for fh, fv in [(False, False), (True, False), (False, True), (True, True)]:
-                xi = x0.clone()
+                xi = batch_x
                 if fh: xi = xi.flip(-1)
                 if fv: xi = xi.flip(-2)
-                with torch.amp.autocast(device.type):
-                    out = m(xi)
-                    main = out[0] if isinstance(out, tuple) else out
+                out = m(xi)
+                main = out[0] if isinstance(out, tuple) else out
                 sp = F.softmax(main, 1)
                 if fh: sp = sp.flip(-1)
                 if fv: sp = sp.flip(-2)
-                ps.append(sp)
-            fold_probs.append(torch.stack(ps).mean(0))
-        ens_prob = torch.stack(fold_probs).mean(0)
-        ens[..., z] = cv2.resize(ens_prob.argmax(1).squeeze().cpu().numpy().astype(np.uint8),
-                                 (W, H), interpolation=cv2.INTER_NEAREST)
+                tta_probs.append(sp)
+            fold_probs_all.append(torch.stack(tta_probs).mean(0).cpu())
+
+    # Assemble per-slice ensemble predictions
+    for z in range(S):
+        per_fold_z = [fold_probs_all[mi][z] for mi in range(len(models))]
+        ens_prob = torch.stack(per_fold_z).mean(0)
+        ens[..., z] = cv2.resize(
+            ens_prob.argmax(0).numpy().astype(np.uint8),
+            (W, H), interpolation=cv2.INTER_NEAREST)
         if per_fold:
-            for i, fpb in enumerate(fold_probs):
-                pf[i][..., z] = cv2.resize(fpb.argmax(1).squeeze().cpu().numpy().astype(np.uint8),
-                                           (W, H), interpolation=cv2.INTER_NEAREST)
+            for i, fpb in enumerate(per_fold_z):
+                pf[i][..., z] = cv2.resize(
+                    fpb.argmax(0).numpy().astype(np.uint8),
+                    (W, H), interpolation=cv2.INTER_NEAREST)
+
     ens = postprocess(ens)
     if per_fold and pf is not None:
         pf = [postprocess(p) for p in pf]
@@ -125,11 +159,30 @@ def main():
     nfold = len(models)
 
     splits = {"train": list_patients(TRAIN_ROOT), "test": list_patients(TEST_ROOT)}
+    tot_pats = sum(len(p) for p in splits.values())
+    pidx = 0
     rows = []
     test_ens_seg, test_perfold_seg = [], [[] for _ in range(nfold)]
     for split, pats in splits.items():
         for pid, rec in sorted(pats.items()):
-            ph = rec["phases"]; ed_img, es_img = ph["ED"]["img"], ph["ES"]["img"]
+            pidx += 1
+            ph = rec["phases"]
+            ed_folder, es_folder = ph["ED"]["img"], ph["ES"]["img"]
+            # Resolve image and ground‑truth paths (may be a file or a directory containing the .nii/.nii.gz file)
+            def resolve_nii(pth):
+                p = Path(pth)
+                if p.is_file():
+                    return str(p)
+                if p.is_dir():
+                    for f in p.iterdir():
+                        if f.suffixes == [".nii", ".gz"] or f.suffix == ".nii":
+                            return str(f)
+                raise FileNotFoundError(f"NIfTI file not found for {pth}")
+
+            ed_img = resolve_nii(ed_folder)
+            es_img = resolve_nii(es_folder)
+            gt_ed_path = resolve_nii(ph["ED"]["gt"])
+            gt_es_path = resolve_nii(ph["ES"]["gt"])
             zooms = nib.load(ed_img).header.get_zooms()[:3]
             voxvol = float(np.prod(np.abs(zooms))) / 1000.0
             dx, dy = float(zooms[0]), float(zooms[1]); spacing = tuple(float(z) for z in zooms)
@@ -138,8 +191,8 @@ def main():
             ed_ens, ed_pf = infer_volume_ensemble(models, ed_img, device, args.img_size, want_pf)
             es_ens, es_pf = infer_volume_ensemble(models, es_img, device, args.img_size, want_pf)
             feat = biomarkers(ed_ens, es_ens, voxvol, dx, dy, bsa)
-            gt_ed = nib.load(ph["ED"]["gt"]).get_fdata().astype(np.int64)
-            gt_es = nib.load(ph["ES"]["gt"]).get_fdata().astype(np.int64)
+            gt_ed = nib.load(gt_ed_path).get_fdata().astype(np.int64)
+            gt_es = nib.load(gt_es_path).get_fdata().astype(np.int64)
             feat_gt = biomarkers(gt_ed, gt_es, voxvol, dx, dy, bsa)
             row = {"pid": pid, "split": split, "group": rec["group"], "label": CLS_MAP[rec["group"]],
                    "height": rec["height"], "weight": rec["weight"], "bsa": bsa,
@@ -155,7 +208,7 @@ def main():
                                for m in ("dice", "iou", "hd95", "assd")} for n in ("RV", "Myo", "LV")}
                     test_perfold_seg[i].append(smf)
             rows.append(row)
-            print(f"  {split} {pid} done")
+            print(f"  [{pidx}/{tot_pats}] {split} {pid} done", flush=True)
     Path(args.out).write_text(json.dumps(rows, indent=2))
 
     # ── Segmentation report ───────────────────────────────────────────────────
