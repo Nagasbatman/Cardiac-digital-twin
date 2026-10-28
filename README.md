@@ -27,7 +27,7 @@ Additionally, the model takes 2.5D inputs (three adjacent short-axis slices) and
 
 ## Installation
 
-PULSE runs on Linux, macOS, and Windows. A GPU is recommended for training; inference also runs on CPU.
+PulseTwin runs on Linux, macOS, and Windows. A GPU is recommended for training; inference also runs on CPU.
 
 **1. Create and activate environment:**
 ```bash

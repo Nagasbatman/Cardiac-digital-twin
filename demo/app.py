@@ -30,6 +30,12 @@ import gradio as gr
 import pulse_seg as PS
 from postprocess import postprocess
 from diagnosis_features import biomarkers, bsa_dubois, FEAT_KEYS, CLS_NAMES
+from validation import (
+    ValidationError,
+    validate_pulse_inputs,
+    find_and_parse_info_cfg,
+    PhaseStatus,
+)
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMG_SIZE = 256
@@ -151,48 +157,84 @@ _CACHE = {
 }
 
 
-def analyze_cardiac_mri(ed_file, es_file, cine_4d_file, ed_frame_idx, es_frame_idx, height_cm, weight_kg, tta_enabled):
+def analyze_cardiac_mri(
+    ed_file,
+    es_file,
+    cine_4d_file,
+    ed_frame_idx,
+    es_frame_idx,
+    height_cm,
+    weight_kg,
+    tta_enabled,
+    user_confirmed=True
+):
     """
-    Executes the 4 core functions:
-      1. Upload & load 3D/4D NIfTI
+    Executes the 4 core functions with safe input validation:
+      1. Deterministically validate inputs (masks, shapes, spacing, patient IDs, Cine frames, confirmation)
       2. Segment cardiac structures with PULSE ensemble
       3. Extract 23 clinical biomarkers
       4. Predict ACDC diagnosis class (NOR, DCM, HCM, MINF, RV)
     """
     global _CACHE
 
-    # --- 1. Load NIfTI Image(s) ---
-    if cine_4d_file is not None:
-        nii = nib.load(cine_4d_file.name)
-        data = nii.get_fdata().astype(np.float32)
-        if data.ndim != 4:
-            return (None, None, None, None, f"Error: Selected 4D Cine MRI but file has shape {data.shape} (ndim={data.ndim}).", None, None)
-        T = data.shape[3]
-        f_ed = max(0, min(int(ed_frame_idx) - 1, T - 1))
-        f_es = max(0, min(int(es_frame_idx) - 1, T - 1))
-        ed_vol = data[..., f_ed]
-        es_vol = data[..., f_es]
-        zooms = nii.header.get_zooms()[:3]
-    elif ed_file is not None and es_file is not None:
-        nii_ed = nib.load(ed_file.name)
-        nii_es = nib.load(es_file.name)
-        ed_vol = nii_ed.get_fdata().astype(np.float32)
-        es_vol = nii_es.get_fdata().astype(np.float32)
-        if ed_vol.ndim == 4: ed_vol = ed_vol[..., 0]
-        if es_vol.ndim == 4: es_vol = es_vol[..., 0]
-        zooms = nii_ed.header.get_zooms()[:3]
-    elif ed_file is not None and es_file is None:
-        # Single 3D volume provided
-        nii_ed = nib.load(ed_file.name)
-        ed_vol = nii_ed.get_fdata().astype(np.float32)
-        if ed_vol.ndim == 4: ed_vol = ed_vol[..., 0]
-        es_vol = ed_vol.copy()
-        zooms = nii_ed.header.get_zooms()[:3]
-    else:
-        return (None, None, None, None, "Please upload either a 4D Cine MRI file OR paired ED/ES 3D volumes.", None, None)
+    # --- 1. Deterministic Safe Input Validation (Before Model Loading) ---
+    try:
+        if cine_4d_file is not None:
+            nii_cine = nib.load(cine_4d_file.name)
+            info_cfg, _ = find_and_parse_info_cfg(cine_4d_file.name)
+            val_res = validate_pulse_inputs(
+                mode="cine4d",
+                cine_nii=nii_cine,
+                cine_filename=cine_4d_file.name,
+                ed_frame_raw=ed_frame_idx,
+                es_frame_raw=es_frame_idx,
+                user_confirmed=user_confirmed,
+                trusted_info_cfg=info_cfg,
+            )
+        elif ed_file is not None or es_file is not None:
+            if ed_file is None:
+                raise ValidationError("Paired mode requires both ED and ES volumes. End-Diastole (ED) volume is missing.")
+            if es_file is None:
+                raise ValidationError("Paired mode requires both ED and ES volumes. End-Systole (ES) volume is missing.")
+            
+            nii_ed = nib.load(ed_file.name)
+            nii_es = nib.load(es_file.name)
+            info_cfg, _ = find_and_parse_info_cfg(ed_file.name)
+            val_res = validate_pulse_inputs(
+                mode="paired",
+                ed_nii=nii_ed,
+                es_nii=nii_es,
+                ed_filename=ed_file.name,
+                es_filename=es_file.name,
+                user_confirmed=user_confirmed,
+                trusted_info_cfg=info_cfg,
+            )
+        else:
+            raise ValidationError("Please upload paired End-Diastole & End-Systole NIfTI volumes, or a 4D Cine cardiac MRI.")
+    except ValidationError as val_err:
+        return (
+            None,
+            None,
+            f"⚠️ Validation Error: {val_err}",
+            None,
+            f"Validation Failed:\n{val_err}",
+            None,
+            gr.update(visible=False)
+        )
+    except Exception as exc:
+        return (
+            None,
+            None,
+            f"⚠️ Input Error: {exc}",
+            None,
+            f"Failed to load or parse NIfTI input: {exc}",
+            None,
+            gr.update(visible=False)
+        )
 
-    if ed_vol.shape != es_vol.shape:
-        return (None, None, None, None, f"Spatial mismatch: ED shape {ed_vol.shape} != ES shape {es_vol.shape}.", None, None)
+    ed_vol = val_res.ed_vol
+    es_vol = val_res.es_vol
+    zooms = val_res.zooms
 
     # --- 2. Segment Cardiac Structures ---
     models = get_models()
@@ -325,12 +367,16 @@ with gr.Blocks(title=TITLE, theme=gr.themes.Soft(primary_hue="blue")) as demo:
                     weight = gr.Number(label="Weight (kg)", value=70)
 
             tta_cb = gr.Checkbox(label="Test-Time Augmentation (4-way flip TTA)", value=True)
+            confirm_cb = gr.Checkbox(
+                label="I confirm selected files/frames represent intended End-Diastole and End-Systole phases",
+                value=True,
+            )
             analyze_btn = gr.Button("Run PULSE Analysis", variant="primary", size="lg")
 
         with gr.Column(scale=2):
             diag_heading = gr.Markdown("### Diagnosis: Ready for analysis")
             diag_chart = gr.Label(label="Diagnosis Class Probabilities (ACDC 5 Classes)")
-            diag_info = gr.Textbox(label="Analysis Details", lines=2, interactive=False)
+            diag_info = gr.Textbox(label="Analysis Details", lines=3, interactive=False)
 
             with gr.Row():
                 out_ed = gr.Image(label="End-Diastole (ED) Overlay", height=320)
@@ -349,7 +395,7 @@ with gr.Blocks(title=TITLE, theme=gr.themes.Soft(primary_hue="blue")) as demo:
     # Wire event handlers
     analyze_btn.click(
         fn=analyze_cardiac_mri,
-        inputs=[ed_input, es_input, cine_input, ed_frame, es_frame, height, weight, tta_cb],
+        inputs=[ed_input, es_input, cine_input, ed_frame, es_frame, height, weight, tta_cb, confirm_cb],
         outputs=[out_ed, out_es, diag_heading, diag_chart, diag_info, biomarker_table, slice_slider]
     )
 
