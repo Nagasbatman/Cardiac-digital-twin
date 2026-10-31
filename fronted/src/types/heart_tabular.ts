@@ -54,6 +54,9 @@ export interface HeartTabularInput {
 
 export interface RiskFactorContribution {
   feature: string;
+  value?: any;
+  typical?: any;
+  effect?: number;
   impact?: string;
   direction?: string;
   patient_value?: any;

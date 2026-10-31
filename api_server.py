@@ -547,7 +547,17 @@ async def predict_heart_disease_tabular(patient: HeartTabularInputModel):
         # Extract explanation factors cleanly
         factors = []
         if isinstance(pred.explanation, dict) and "factors" in pred.explanation:
-            factors = pred.explanation["factors"]
+            for f in pred.explanation["factors"]:
+                eff = float(f.get("effect", 0.0))
+                factors.append({
+                    "feature": f.get("feature", ""),
+                    "value": f.get("value"),
+                    "typical": f.get("typical"),
+                    "effect": round(eff, 4),
+                    "impact": f"{eff * 100:+.1f} pts",
+                    "patient_value": f.get("value"),
+                    "reference_value": f.get("typical"),
+                })
 
         return {
             "success": True,
