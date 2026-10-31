@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Activity, Cpu, Heart, CheckCircle2, AlertCircle, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Activity, Cpu, Heart, CheckCircle2, AlertCircle, ShieldCheck, ScanLine, FileText } from "lucide-react";
 import { fetchHealth } from "@/config/api";
 import { HealthStatus } from "@/types/cardiac";
 
 export const Header: React.FC = () => {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isChecking, setIsChecking] = useState(true);
+  const pathname = usePathname();
 
   useEffect(() => {
     let mounted = true;
@@ -57,6 +60,32 @@ export const Header: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {/* Navigation Tabs between Modules */}
+        <nav className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/90 border border-slate-800 shadow-inner">
+          <Link
+            href="/"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              pathname === "/"
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/10"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent"
+            }`}
+          >
+            <ScanLine className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Module I: Cardiac MRI</span>
+          </Link>
+          <Link
+            href="/heart-prediction"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              pathname === "/heart-prediction"
+                ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm shadow-rose-500/10"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent"
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5 text-rose-400" />
+            <span>Module II: Tabular Risk</span>
+          </Link>
+        </nav>
 
         {/* Server & Engine Telemetry */}
         <div className="flex items-center gap-3">

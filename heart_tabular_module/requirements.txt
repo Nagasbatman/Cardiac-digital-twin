@@ -1,0 +1,23 @@
+# Heart Tabular Module — Runtime dependencies
+# These are the exact versions used to train and pickle the .joblib models.
+# scikit-learn and imbalanced-learn versions MUST match what saved the pickles
+# or joblib.load will fail.
+
+# Core inference (locked to pickle-compatible versions)
+numpy>=2.0
+pandas==3.0.3
+scikit-learn==1.8.0
+imbalanced-learn==0.14.1
+joblib
+
+# Calibrated model uses CatBoost or LightGBM internals — include both
+# even though the selected model is Logistic Regression, because the
+# CalibratedClassifierCV wrapper may reference them during unpickling.
+catboost==1.2.10
+lightgbm==4.7.0
+
+# Explainable Boosting Machine (interpret-core used during training)
+interpret-core==0.7.8
+
+# Streamlit UI
+streamlit>=1.50
