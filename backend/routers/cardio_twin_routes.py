@@ -2,13 +2,17 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from backend.db.persistence import persist_simulation_run
 
 # Setup path for cardio_twin
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -328,6 +332,7 @@ def _builtin_presets_fallback() -> dict:
 @router.post("/simulate")
 def run_simulation(req: SimulatePresetRequest, x_session_id: Optional[str] = Header(None)):
     """Run an explicitly chosen generic preset simulation via CardioSim."""
+    t0 = time.time()
     session_id = _get_session_id(x_session_id, req.session_id)
     client = _get_cardiosim_client()
 
@@ -381,22 +386,40 @@ def run_simulation(req: SimulatePresetRequest, x_session_id: Optional[str] = Hea
         # Build side-by-side comparison if compare_preset provided
         comparison = build_comparison_metrics(sim_response, req.preset_name, req.compare_preset, presets)
 
+        metrics_dict = {
+            "co": sim_response.primary.metrics.co,
+            "sv": sim_response.primary.metrics.sv,
+            "sys": sim_response.primary.metrics.sys,
+            "dia": sim_response.primary.metrics.dia,
+            "map_val": sim_response.primary.metrics.map_val,
+            "pp": sim_response.primary.metrics.pp,
+            "ef": sim_response.primary.metrics.ef,
+            "hr": sim_response.primary.metrics.hr,
+        }
+
+        # Persist to database in schema pulse (fail-safe)
+        try:
+            elapsed_ms = (time.time() - t0) * 1000.0
+            persist_simulation_run(
+                scenario_name=scenario.label,
+                scenario_kind="GENERIC_BASELINE",
+                preset_name=req.preset_name,
+                sim_params=preset_settings,
+                metrics=metrics_dict,
+                subject_id=req.subject_id,
+                session_id=session_id,
+                execution_time_ms=elapsed_ms,
+            )
+        except Exception as p_err:
+            LOG.warning("Failed to persist simulation run: %s", type(p_err).__name__)
+
         return {
             "success": True,
             "scenario_label": scenario.label,
             "scenario_disclaimer": scenario.disclaimer,
             "sim_params": preset_settings,
             "duration": req.duration,
-            "metrics": {
-                "co": sim_response.primary.metrics.co,
-                "sv": sim_response.primary.metrics.sv,
-                "sys": sim_response.primary.metrics.sys,
-                "dia": sim_response.primary.metrics.dia,
-                "map_val": sim_response.primary.metrics.map_val,
-                "pp": sim_response.primary.metrics.pp,
-                "ef": sim_response.primary.metrics.ef,
-                "hr": sim_response.primary.metrics.hr,
-            },
+            "metrics": metrics_dict,
             "comparison": comparison,
         }
     except CardioSimConnectionError as exc:
@@ -410,6 +433,7 @@ def run_simulation(req: SimulatePresetRequest, x_session_id: Optional[str] = Hea
 @router.post("/scenarios/run")
 def run_custom_scenario(req: RunWhatIfScenarioRequest, x_session_id: Optional[str] = Header(None)):
     """Run an independent what-if scenario with authoritative parameter validation."""
+    t0 = time.time()
     session_id = _get_session_id(x_session_id, req.session_id)
     client = _get_cardiosim_client()
 
@@ -472,6 +496,44 @@ def run_custom_scenario(req: RunWhatIfScenarioRequest, x_session_id: Optional[st
         all_scenarios = global_scenario_store.get_scenarios(session_id)
 
         comparison_view = build_scenario_comparison_view(baseline_record, new_record, all_scenarios)
+
+        # Persist to database in schema pulse (fail-safe)
+        try:
+            elapsed_ms = (time.time() - t0) * 1000.0
+            deltas_list = []
+            if new_record.deltas_from_baseline:
+                for d in new_record.deltas_from_baseline:
+                    if dataclasses.is_dataclass(d):
+                        deltas_list.append(dataclasses.asdict(d))
+                    elif hasattr(d, "to_dict"):
+                        deltas_list.append(d.to_dict())
+                    elif hasattr(d, "model_dump"):
+                        deltas_list.append(d.model_dump())
+                    elif hasattr(d, "__dict__"):
+                        deltas_list.append(d.__dict__)
+                    else:
+                        deltas_list.append(str(d))
+
+            persist_simulation_run(
+                scenario_name=req.scenario_name,
+                scenario_kind="WHAT_IF",
+                preset_name=req.preset_name,
+                sim_params={
+                    "hr": req.hr,
+                    "contract": req.contract,
+                    "resist": req.resist,
+                    "compl": req.compl,
+                    "duration": req.duration,
+                },
+                metrics=new_record.sim_result.metrics.model_dump() if (new_record.sim_result and hasattr(new_record.sim_result.metrics, "model_dump")) else {},
+                deltas=deltas_list,
+                subject_id=req.subject_id,
+                session_id=session_id,
+                execution_time_ms=elapsed_ms,
+            )
+        except Exception as p_err:
+            LOG.warning("Failed to persist what-if scenario run: %s", type(p_err).__name__)
+
         return {
             "success": True,
             "scenario": new_record.to_summary_dict(),

@@ -33,6 +33,8 @@ from validation import (
     find_and_parse_info_cfg,
     PhaseStatus,
 )
+import time
+from backend.db.persistence import persist_mri_analysis_run
 
 router = APIRouter(tags=["Module I: Cardiac MRI"])
 
@@ -126,6 +128,7 @@ async def analyze_mri(
     user_confirmed: bool = Form(True)
 ):
     """Executes cardiac MRI analysis pipeline."""
+    t0 = time.time()
     temp_dir = tempfile.TemporaryDirectory()
     try:
         val_res = None
@@ -215,7 +218,10 @@ async def analyze_mri(
             raise HTTPException(status_code=400, detail=f"Unsupported mode '{mode}'. Choose 'paired', 'cine4d', or 'sample'.")
 
         models = get_models()
-        bundle = get_classifier()
+        try:
+            bundle = get_classifier()
+        except Exception:
+            bundle = None
 
         pred_ed = infer_3d_volume(val_res.ed_vol, models, tta=tta_enabled)
         pred_es = infer_3d_volume(val_res.es_vol, models, tta=tta_enabled)
@@ -308,7 +314,7 @@ async def analyze_mri(
             "warnings": val_res.warnings,
         }
 
-        return {
+        result_payload = {
             "success": True,
             "metadata": meta_dict,
             "patient_info": {
@@ -323,6 +329,15 @@ async def analyze_mri(
             "biomarkers": biomarkers_list,
             "slices": slices_data,
         }
+
+        # Persist to database in schema pulse (fail-safe)
+        try:
+            elapsed_ms = (time.time() - t0) * 1000.0 if "t0" in locals() else None
+            persist_mri_analysis_run(result_payload, mode=mode, execution_time_ms=elapsed_ms)
+        except Exception:
+            pass
+
+        return result_payload
 
     except ValidationError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import warnings
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from backend.db.persistence import persist_tabular_risk_run
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_DIR.parent
@@ -157,6 +160,7 @@ async def predict_heart_disease_tabular(patient: HeartTabularInputModel):
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
 
+    t0 = time.time()
     try:
         pred = predict_heart_tabular(patient_dict, explain=True)
         factors = []
@@ -173,7 +177,7 @@ async def predict_heart_disease_tabular(patient: HeartTabularInputModel):
                     "reference_value": f.get("typical"),
                 })
 
-        return {
+        result_payload = {
             "success": True,
             "status": pred.status,
             "label": pred.label,
@@ -186,6 +190,15 @@ async def predict_heart_disease_tabular(patient: HeartTabularInputModel):
             "details": pred.details,
             "input_summary": patient_dict
         }
+
+        # Persist to database in schema pulse (fail-safe)
+        try:
+            elapsed_ms = (time.time() - t0) * 1000.0
+            persist_tabular_risk_run(result_payload, patient_dict, execution_time_ms=elapsed_ms)
+        except Exception:
+            pass
+
+        return result_payload
     except Exception as exc:
         import traceback
         traceback.print_exc()

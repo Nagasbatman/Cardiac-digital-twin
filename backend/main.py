@@ -19,14 +19,21 @@ for p in (REPO_ROOT, REPO_ROOT / "pulse", REPO_ROOT / "demo", CARDIO_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
+import logging
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from backend import config
+from backend.db.session import engine
 from backend.routers.mri_routes import router as mri_router
 from backend.routers.tabular_routes import router as tabular_router, HEART_TABULAR_AVAILABLE
 from backend.routers.cardio_twin_routes import router as cardio_twin_router, _loader, _get_cardiosim_client
+
+LOG = logging.getLogger(__name__)
 
 app = FastAPI(
     title="PULSE Unified Cardiac Digital Twin API",
@@ -47,6 +54,26 @@ app.add_middleware(
 app.include_router(mri_router)
 app.include_router(tabular_router)
 app.include_router(cardio_twin_router)
+
+
+@app.get("/api/database/health")
+def database_health():
+    """Verify PostgreSQL connectivity via a lightweight SELECT 1 probe.
+
+    Returns HTTP 200 when the database is reachable.
+    Returns HTTP 503 when the connection fails.
+    Never exposes credentials, connection URLs, or internal exception details.
+    """
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "connected", "database": "digital_twin_db"}
+    except Exception:
+        LOG.warning("Database health check failed.", exc_info=True)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unavailable", "detail": "Database connection failed."},
+        )
 
 
 @app.get("/api/health")
