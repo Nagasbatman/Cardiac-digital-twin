@@ -3,20 +3,27 @@ export type CardiacClass = "NOR" | "DCM" | "HCM" | "MINF" | "RV" | "UNKNOWN";
 export interface Biomarker {
   key: string;
   description: string;
-  value: number;
+  value: number | null;
   unit: string;
   category: "LV Function" | "RV Function" | "Myocardium" | "BSA-Indexed" | "Geometry & Ratios" | "Wall Thickness" | "General";
   normal_range?: string;
 }
 
 export interface DiagnosisInfo {
-  predicted_class: CardiacClass;
-  predicted_full_name: string;
-  confidence: number;
-  probabilities: Record<string, number>;
-  headline: string;
-  details: string;
-  description: string;
+  predicted_class?: CardiacClass | null;
+  predicted_full_name?: string | null;
+  /** Confidence as a percentage, only when a classifier produced a valid result. */
+  confidence?: number | null;
+  /** Per-class probabilities as fractions in [0, 1]. */
+  probabilities?: Partial<Record<CardiacClass, number | null>> | null;
+  headline?: string | null;
+  details?: string | null;
+  description?: string | null;
+  /** Legacy response fields retained during API transition. */
+  prediction?: string;
+  prediction_full_name?: string;
+  confidence_percent?: number | null;
+  class_probabilities?: Record<string, number> | null;
 }
 
 export interface SliceData {

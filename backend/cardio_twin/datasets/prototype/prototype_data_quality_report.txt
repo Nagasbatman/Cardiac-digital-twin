@@ -1,0 +1,13 @@
+PROTOTYPE DATA QUALITY REPORT
+Patients=1,500 unique; admissions=6,241 unique; measurements=178,684.
+Measurement completeness check against existing patient_measurement_coverage.csv: passed for row counts and distinct measurement dates for all 1,500 selected subjects.
+Patients with multiple measurement dates=1,478; one date=22.
+Exact duplicate measurement rows in sample=0.
+Rows with admission IDs not marked Verified=0; statuses={'Missing admission ID': 136678, 'Verified': 42006}.
+Rows missing required-column values: {'subject_id': 0, 'event_time': 0, 'event_date': 0, 'measurement_name': 0, 'measurement_value': 3851, 'value_numeric': 3851, 'measurement_unit': 88160, 'hadm_id': 136678}.
+Lab rows missing units=0; lab rows missing numeric values=3,851.
+Admission-link conflicts are retained and flagged; the previously documented 16 extracted conflicts were not rescanned. Source-level investigation is reused from admission_link_investigation.txt.
+Previously flagged laboratory values are retained with review flags from the existing lab_value_review.csv; targeted raw source lookups were not repeated. Further source verification is pending.
+Troponin item verification uses the prior troponin_item_verification.txt findings; no catalogue or original labevents scan was repeated.
+HbA1c and creatinine are supporting context only. Measurement presence does not establish heart disease or diagnosis-confirmed cardiac status.
+The prototype is a measurement-based convenience/weighted sample, not a population-representative or diagnosis-confirmed cohort. Suitable for next-stage data integration after review of flagged values and admission links; not yet suitable for clinical simulation.

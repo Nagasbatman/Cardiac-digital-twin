@@ -85,6 +85,17 @@ export const Header: React.FC = () => {
             <Activity className="w-3.5 h-3.5 text-rose-400" />
             <span>Module II: Tabular Risk</span>
           </Link>
+          <Link
+            href="/cardiovascular-twin"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              pathname === "/cardiovascular-twin"
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent"
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Module III: Digital Twin</span>
+          </Link>
         </nav>
 
         {/* Server & Engine Telemetry */}
@@ -103,7 +114,7 @@ export const Header: React.FC = () => {
                 <span className="text-slate-600">|</span>
                 <div className="flex items-center gap-1 text-cyan-400 font-mono text-[11px]">
                   <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>{health.device.toUpperCase()}</span>
+                  <span>{health.device?.toUpperCase() ?? "CPU"}</span>
                 </div>
               </>
             ) : (

@@ -1,80 +1,64 @@
-# PulseTwin Web Portal (Next.js + TypeScript)
+# PULSE Web Portal (Next.js 16 + TypeScript + Tailwind CSS)
 
-Modern medical-research dashboard for **PULSE: Cardiac MRI Segmentation, Biomarker Extraction, and Cardiomyopathy Diagnosis**.
-
----
-
-## Architecture & Integration
-
-This frontend interface operates as an independent client for the PULSE deep learning engine without modifying any existing machine learning pipelines, checkpoints, or the Gradio interface:
-
-- **Frontend (`fronted/`)**: Next.js 16 (App Router) + TypeScript + Tailwind CSS + Lucide Icons.
-- **Backend API Adapter (`api_server.py`)**: FastAPI REST service running on port 8000. Reuses the 4-fold ViT-B/14 DINOv2 ensemble (`folds_vdino/fold_{0..3}`) and Random Forest classifier (`diagnosis_classifier.joblib`) from `demo/app.py`.
-- **Original Gradio Application (`demo/app.py`)**: Remains 100% untouched and runs independently on port 7860.
+Modern medical-research dashboard for the **Digital Twin-Driven Cardiovascular Risk Prediction System**.
 
 ---
 
-## Core Supported Clinical Functions
+## 1. Multi-Module Navigation
 
-1. **Paired 3D Volume Upload**: Upload paired End-Diastole (ED) and End-Systole (ES) short-axis NIfTI scans (`.nii` and `.nii.gz`).
-2. **4D Cine MRI Temporal Study**: Upload 4D temporal cine MRI with configurable ED and ES frame index pickers.
-3. **Interactive Volumetric Segmentation Viewer**:
-   - Scrub base-to-apex short-axis slices with a dedicated slider.
-   - Distinct anatomical color overlays: **RV = Red (`#dc2828`)**, **Myocardium = Green (`#28c83c`)**, **LV = Blue (`#325ae6`)**.
-   - View modes: Segmentation Overlay, Raw Grayscale MRI, and Side-by-Side Comparison.
-4. **23 Clinical Biomarkers**:
-   - Ventricular volumetrics (LV EDV, LV ESV, LV SV, LV EF, RV EDV, RV ESV, RV SV, RV EF).
-   - Myocardial mass & wall dimensions (LVM, Myo ED/ES, Mean/Max/Std wall thickness).
-   - BSA-indexed parameters (LV EDVi, LV ESVi, LVMi, RV EDVi).
-   - Geometric remodeling ratios (Concentricity, RV/LV EDV, ESV/EDV, RVEF/LVEF, Myo/LV).
-   - Category filtering, search bar, and CSV export.
-5. **ACDC 5-Class Cardiomyopathy Classification**:
-   - Predicts NOR (Normal), DCM (Dilated Cardiomyopathy), HCM (Hypertrophic Cardiomyopathy), MINF (Myocardial Infarction), or RV (Abnormal RV).
-   - Displays full confidence percentages and probability distribution across all 5 classes.
-6. **1-Click Demo Evaluation**: Includes a fast demo button to instantly load and evaluate the bundled ACDC Patient 101 case without requiring manual file uploads.
+The frontend provides unified navigation across all three platform modules:
 
----
+1. **Module I: Cardiac MRI Analysis** (`/`)
+   - 2.5D paired and 4D cine MRI short-axis slice segmentation with 4-fold DINOv2 ensemble.
+   - Interactive volumetric slice slider and multi-layer RGB anatomical overlays (RV Red, Myo Green, LV Blue).
+   - 23 clinical biomarkers table with normal reference ranges and category filters.
+   - ACDC 5-class cardiomyopathy diagnostic classification.
 
-## Quickstart Guide
+2. **Module II: Heart Disease Risk Prediction** (`/heart-prediction`)
+   - Tabular demographic, hemodynamic, laboratory, and symptomatic risk prediction.
+   - Categorized input forms with instant sample patient pre-fill.
+   - Prediction results, risk levels, and contributing feature insights.
 
-### 1. Launch the Python API Adapter (Port 8000)
-
-From the project root:
-
-```bash
-# Activate your python environment
-.venv\Scripts\python.exe api_server.py
-```
-
-### 2. Launch the Next.js Frontend (Port 3000)
-
-From the `fronted/` folder:
-
-```bash
-cd fronted
-npm install
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-### 3. Launch the Original Gradio UI (Port 7860)
-
-The original Gradio app remains completely intact:
-
-```bash
-# From project root
-.venv\Scripts\python.exe demo/app.py
-```
-
-Open [http://127.0.0.1:7860](http://127.0.0.1:7860) in your browser.
+3. **Module III: Cardiovascular Digital Twin & CardioSim Simulation** (`/cardiovascular-twin`)
+   - **Area 1 (Telemetry & Context)**: Real-time API telemetry, research prototype indicator, and HIPAA de-identification notices.
+   - **Area 2 (Patient Cohort Explorer)**: 1,500-patient MIMIC-IV cohort search with instant quick-select curated clinical profiles (Young baseline, adult hypertensive, elderly diabetic, complex multi-visit).
+   - **Area 3 (Current Cardiovascular State)**: Categorized observation cards (Blood Pressure, Glycemic Control, Renal Function, Lipid Profile).
+   - **Area 4 (Recorded Clinical History)**: Interactive SVG trend charts across longitudinal visits and paginated observation history.
+   - **Area 5 (What-if Scenario Engine)**:
+     - Scientific parameter provenance table distinguishing clinical measurements from ODE parameters (`MEASURED`, `ESTIMATED`, `ASSUMED`, `UNAVAILABLE`).
+     - Reference baseline selector (Healthy Adult, Hypertension, Heart Failure, etc.).
+     - Bound-checked slider controls for simulation inputs (`hr`, `contract`, `resist`, `compl`).
+     - Real-time simulation execution via live CardioSim engine.
+     - Key Hemodynamic KPI cards (Cardiac Output, Stroke Volume, Mean Arterial Pressure).
+     - Color-coded Left Ventricular Ejection Fraction (LVEF) continuum progress bar.
+     - Side-by-side metric comparison table with absolute and percentage deltas against baseline.
 
 ---
 
-## Environment Variables
+## 2. Configuration & Environment Variables
 
-Configured in `fronted/.env.local`:
+Create or update `.env.local`:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8001
 ```
+
+> [!IMPORTANT]
+> The unified backend runs on port 8001 to avoid colliding with CardioSim on port 8000.
+
+---
+
+## 3. Development & Build
+
+### Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000).
+
+### Production Build
+```bash
+npm run build
+npm run start
+```
+Compiles with Next.js 16 App Router and static export compatibility.

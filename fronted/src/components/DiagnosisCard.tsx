@@ -13,7 +13,7 @@ import {
 import { DiagnosisInfo, AnalysisMetadata } from "@/types/cardiac";
 
 interface DiagnosisCardProps {
-  diagnosis: DiagnosisInfo;
+  diagnosis?: DiagnosisInfo | null;
   metadata?: AnalysisMetadata;
 }
 
@@ -80,18 +80,26 @@ const CLASS_DESCRIPTIONS: Record<string, string> = {
 };
 
 export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({ diagnosis, metadata }) => {
-  const theme =
-    CLASS_THEMES[diagnosis.predicted_class] || CLASS_THEMES.UNKNOWN;
-
-  const probs = diagnosis.probabilities || {
-    NOR: 0,
-    DCM: 0,
-    HCM: 0,
-    MINF: 0,
-    RV: 0,
-  };
-
-  const aClasses = ["NOR", "DCM", "HCM", "MINF", "RV"];
+  const aClasses = ["NOR", "DCM", "HCM", "MINF", "RV"] as const;
+  const requestedClass = diagnosis?.predicted_class;
+  const hasKnownClass = typeof requestedClass === "string" && requestedClass in CLASS_THEMES;
+  const predictedClass = hasKnownClass ? requestedClass : "UNKNOWN";
+  const theme = CLASS_THEMES[predictedClass];
+  const rawConfidence = diagnosis?.confidence;
+  const confidence =
+    typeof rawConfidence === "number" && Number.isFinite(rawConfidence) && rawConfidence >= 0 && rawConfidence <= 100
+      ? rawConfidence
+      : null;
+  const probabilities = diagnosis?.probabilities;
+  const probabilityValues = aClasses.map((cls) => probabilities?.[cls]);
+  const probabilityTotal = probabilityValues.reduce<number>(
+    (sum, value) => sum + (typeof value === "number" && Number.isFinite(value) ? value : 0),
+    0
+  );
+  const hasValidProbabilities =
+    probabilityValues.every(
+      (value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1
+    ) && Math.abs(probabilityTotal - 1) <= 0.02;
 
   return (
     <div className="glass-panel p-5 sm:p-6 space-y-6">
@@ -170,16 +178,16 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({ diagnosis, metadat
             </div>
             <div className="flex items-baseline gap-3 flex-wrap">
               <h2 className={`text-2xl sm:text-3xl font-extrabold ${theme.text}`}>
-                {diagnosis.predicted_class}
+                {hasKnownClass ? predictedClass : "Not available"}
               </h2>
               <span className="text-lg font-semibold text-slate-200">
-                — {diagnosis.predicted_full_name}
+                — {diagnosis?.predicted_full_name || "Not available"}
               </span>
             </div>
             <p className="text-xs text-slate-300 max-w-2xl pt-1">
-              {CLASS_DESCRIPTIONS[diagnosis.predicted_class] ||
-                diagnosis.description ||
-                "Clinical biomarker pattern evaluated against ACDC criteria."}
+              {CLASS_DESCRIPTIONS[predictedClass] ||
+                diagnosis?.description ||
+                "Diagnosis information is not available for this analysis."}
             </p>
           </div>
 
@@ -190,21 +198,21 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({ diagnosis, metadat
                 Model Confidence
               </span>
               <div className="flex items-center gap-1 font-mono text-2xl font-bold text-white">
-                <span>{diagnosis.confidence.toFixed(1)}</span>
-                <span className="text-sm text-cyan-400">%</span>
+                <span>{confidence === null ? "Not available" : confidence.toFixed(1)}</span>
+                {confidence !== null && <span className="text-sm text-cyan-400">%</span>}
               </div>
             </div>
             <div className="w-24 h-2 bg-slate-800 rounded-full mt-1.5 overflow-hidden">
               <div
                 className={`h-full ${theme.barColor} rounded-full transition-all duration-700`}
-                style={{ width: `${Math.min(100, diagnosis.confidence)}%` }}
+                style={{ width: confidence === null ? "0%" : `${confidence}%` }}
               />
             </div>
           </div>
         </div>
 
         {/* Diagnosis Technical Details */}
-        {diagnosis.details && (
+        {typeof diagnosis?.details === "string" && diagnosis.details.length > 0 && (
           <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-start gap-2 text-xs text-slate-400">
             <Info className="w-3.5 h-3.5 text-slate-500 flex-shrink-0 mt-0.5" />
             <span>{diagnosis.details}</span>
@@ -217,14 +225,17 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({ diagnosis, metadat
         <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
           <span>Class Probability Distribution (5 ACDC Classes)</span>
           <span className="text-slate-500 font-mono text-[11px]">
-            Sum = 100.0%
+            {hasValidProbabilities ? "Sum = 100.0%" : "Not available"}
           </span>
         </div>
 
         <div className="space-y-2.5">
           {aClasses.map((cls) => {
-            const prob = (probs[cls] || 0) * 100;
-            const isWinner = cls === diagnosis.predicted_class;
+            const rawProbability = probabilities?.[cls];
+            const prob = hasValidProbabilities && typeof rawProbability === "number"
+              ? rawProbability * 100
+              : null;
+            const isWinner = hasKnownClass && cls === predictedClass;
             const clsTheme = CLASS_THEMES[cls] || CLASS_THEMES.UNKNOWN;
 
             return (
@@ -265,7 +276,7 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({ diagnosis, metadat
                       isWinner ? clsTheme.text : "text-slate-400"
                     }`}
                   >
-                    {prob.toFixed(1)}%
+                    {prob === null ? "Not available" : `${prob.toFixed(1)}%`}
                   </span>
                 </div>
 
@@ -275,7 +286,7 @@ export const DiagnosisCard: React.FC<DiagnosisCardProps> = ({ diagnosis, metadat
                     className={`h-full ${
                       isWinner ? clsTheme.barColor : "bg-slate-600"
                     } rounded-full transition-all duration-700`}
-                    style={{ width: `${Math.max(1, prob)}%` }}
+                    style={{ width: prob === null ? "0%" : `${Math.min(100, Math.max(0, prob))}%` }}
                   />
                 </div>
               </div>

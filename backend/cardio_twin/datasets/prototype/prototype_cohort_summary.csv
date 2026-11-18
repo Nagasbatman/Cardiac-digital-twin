@@ -1,0 +1,22 @@
+metric,value,details
+selected_unique_patients,1500,Measurement-based sample; not diagnosis-confirmed
+associated_admissions,6241,All admissions for selected subjects
+measurement_rows,178684,Compared per patient with existing coverage table
+blood_pressure_rows,88160,Cardiovascular-priority measurement
+patients_with_blood_pressure,1295,Measurement presence; not diagnosis-confirmed
+troponin_rows,6125,Cardiovascular-priority measurement
+patients_with_troponin,1014,Measurement presence; not diagnosis-confirmed
+total_cholesterol_rows,4432,Cardiovascular-priority measurement
+patients_with_total_cholesterol,967,Measurement presence; not diagnosis-confirmed
+hdl_rows,4323,Cardiovascular-priority measurement
+patients_with_hdl,960,Measurement presence; not diagnosis-confirmed
+ldl_rows,4623,Cardiovascular-priority measurement
+patients_with_ldl,950,Measurement presence; not diagnosis-confirmed
+triglycerides_rows,4681,Cardiovascular-priority measurement
+patients_with_triglycerides,1001,Measurement presence; not diagnosis-confirmed
+hba1c_supporting_rows,4118,Supporting context only
+patients_with_hba1c_supporting,881,Measurement presence; not diagnosis-confirmed
+creatinine_supporting_rows,62222,Supporting context only
+patients_with_creatinine_supporting,1474,Measurement presence; not diagnosis-confirmed
+patients_with_multiple_measurement_dates,1478,Across all retained measurement types
+diagnosis_confirmed_cardiac_patients,not available,No ICD-based cohort determination

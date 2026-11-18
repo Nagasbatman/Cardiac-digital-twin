@@ -50,20 +50,20 @@ export const BiomarkersTable: React.FC<BiomarkersTableProps> = ({
       activeCategory === "All" || b.category === activeCategory;
     const matchesQuery =
       searchQuery.trim() === "" ||
-      b.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.unit.toLowerCase().includes(searchQuery.toLowerCase());
+      (b.key ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (b.description ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (b.unit ?? "").toLowerCase().includes(searchQuery.toLowerCase());
     return matchesCat && matchesQuery;
   });
 
   const exportCSV = () => {
     const headers = ["Biomarker", "Description", "Value", "Unit", "Category", "Normal Range"];
     const rows = biomarkers.map((b) => [
-      b.key,
-      `"${b.description}"`,
-      b.value,
-      `"${b.unit}"`,
-      `"${b.category}"`,
+      b.key ?? "",
+      `"${b.description ?? ""}"`,
+      b.value ?? "",
+      `"${b.unit ?? ""}"`,
+      `"${b.category ?? ""}"`,
       `"${b.normal_range || ""}"`,
     ]);
     const csvContent =
@@ -228,27 +228,29 @@ export const BiomarkersTable: React.FC<BiomarkersTableProps> = ({
           </thead>
           <tbody className="divide-y divide-slate-800/60 bg-slate-950/40">
             {filteredBiomarkers.length > 0 ? (
-              filteredBiomarkers.map((b) => (
+              filteredBiomarkers.map((b, index) => (
                 <tr
-                  key={b.key}
+                  key={`${b.key ?? "missing"}-${b.category ?? "unknown"}-${index}`}
                   className="hover:bg-slate-900/50 transition-colors"
                 >
                   <td className="py-2.5 px-4 font-mono font-bold text-cyan-400 whitespace-nowrap">
-                    {b.key}
+                    {b.key || b.description || "Unlabelled biomarker"}
                   </td>
                   <td className="py-2.5 px-4 font-medium text-slate-200">
-                    {b.description}
+                    {b.description || "Not available"}
                   </td>
                   <td className="py-2.5 px-4">
                     <span className="px-2 py-0.5 rounded-md text-[10px] bg-slate-900 border border-slate-800 text-slate-400">
-                      {b.category}
+                      {b.category || "Not available"}
                     </span>
                   </td>
                   <td className="py-2.5 px-4 text-right font-mono font-semibold text-white">
-                    {b.value.toFixed(2)}
+                    {typeof b.value === "number" && Number.isFinite(b.value)
+                      ? b.value.toFixed(2)
+                      : "Not available"}
                   </td>
                   <td className="py-2.5 px-4 font-mono text-slate-400">
-                    {b.unit}
+                    {b.unit || "Not available"}
                   </td>
                   <td className="py-2.5 px-4 text-slate-400 font-mono text-[11px]">
                     {b.normal_range || "—"}
