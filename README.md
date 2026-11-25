@@ -90,7 +90,7 @@ The system integrates three specialized cardiovascular modeling modules into a u
 ### Step 1: Start the CardioSim Engine (Port 8000)
 In a dedicated terminal:
 ```powershell
-cd C:\Users\Harshavardan\cardiac_digital_twin\CardioSim\backend
+cd C:\Users\cardiac_digital_twin\CardioSim\backend
 # Run with uvicorn on port 8000
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
@@ -98,7 +98,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ### Step 2: Start the PULSE Unified Backend (Port 8001)
 In a dedicated terminal:
 ```powershell
-cd C:\Users\Harshavardan\cardiac_digital_twin\PULSE
+cd C:\Users\cardiac_digital_twin\PULSE
 # Option A: Run directly without activating (recommended)
 .\.venv\Scripts\python.exe api_server.py
 
@@ -117,7 +117,7 @@ curl http://127.0.0.1:8001/api/health
 ### Step 3: Start the PULSE Next.js Frontend (Port 3000)
 In a dedicated terminal:
 ```powershell
-cd C:\Users\Harshavardan\cardiac_digital_twin\PULSE\frontend
+cd C:\Users\cardiac_digital_twin\PULSE\frontend
 npm run dev
 ```
 Open **[http://localhost:3000](http://localhost:3000)** in your browser.
@@ -129,7 +129,7 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 Run all unit, API, validation, and integration tests across all three modules:
 
 ```powershell
-cd C:\Users\Harshavardan\cardiac_digital_twin\PULSE
+cd C:\Users\cardiac_digital_twin\PULSE
 .\.venv\Scripts\python.exe -m pytest tests/ -v
 ```
 
